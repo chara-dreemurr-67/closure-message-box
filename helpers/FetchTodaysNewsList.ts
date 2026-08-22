@@ -1,6 +1,7 @@
 import APIConnector from "../APIConnector.js";
 import IsTodayUTC from "./IsTodayUTC.js";
 import type { News, NewsList } from "../types/NewsList.js";
+import LoadEnv from "../LoadEnv.js";
 
 export default async (): Promise<News[]> => {
     const Output: News[] = [];
@@ -8,7 +9,7 @@ export default async (): Promise<News[]> => {
     let Break: boolean = false;
 
     while(true) {
-        const Response: Response = await APIConnector.FetchLatest(Index);
+        const Response: Response = await APIConnector.FetchLatest(Index, LoadEnv.FETCH_SIZE);
 
         if(!Response.ok)
             break;

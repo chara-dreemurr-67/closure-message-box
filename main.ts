@@ -4,11 +4,19 @@ import type { News } from "./types/NewsList.js";
 import LoadEnv from "./LoadEnv.js";
 import ParseTodaysNews from "./helpers/ParseTodaysNews.js";
 import FetchTodaysNewsList from "./helpers/FetchTodaysNewsList.js";
+import FetchNewsList from "./helpers/FetchNewsList.js";
 
-export default async (): Promise<void> => {
+export default async function main(): Promise<void>;
+export default async function main(Index: number, PageSize: number): Promise<void>;
+export default async function main(Index?: number, PageSize?: number): Promise<void> {
     const Client: Telegraf = new Telegraf(LoadEnv.BOT_TOKEN);
 
-    const News: News[] | undefined = await FetchTodaysNewsList();
+    let News: News[] | undefined;
+
+    if(Index && PageSize)
+        News = await FetchNewsList(Index, PageSize);
+    else News = await FetchTodaysNewsList();
+    
     if(!News) {
         await Client.telegram.sendMessage(LoadEnv.CHATID, "Something went wrong.");
         return;
@@ -46,4 +54,4 @@ export default async (): Promise<void> => {
             await Client.telegram.sendMessage(LoadEnv.CHATID, News.Link);
         }
     }
-};
+}
