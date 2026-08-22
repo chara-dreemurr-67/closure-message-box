@@ -42,8 +42,8 @@ export default async (): Promise<void> => {
             await Client.telegram.sendMessage(LoadEnv.CHATID, new Array(3).fill("=".repeat(50)).join("\n"));
         }
         catch(Err) {
-            console.error(Err);
-            console.log(News.Link);
+            await Client.telegram.sendMessage(LoadEnv.CHATID, Err as any);
+            await Client.telegram.sendMessage(LoadEnv.CHATID, News.Link);
         }
     }
 };
