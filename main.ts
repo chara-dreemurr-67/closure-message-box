@@ -5,7 +5,7 @@ import LoadEnv from "./LoadEnv.js";
 import ParseTodaysNews from "./helpers/ParseTodaysNews.js";
 import FetchTodaysNewsList from "./helpers/FetchTodaysNewsList.js";
 
-const Main = async (): Promise<void> => {
+export default async (): Promise<void> => {
     const Client: Telegraf = new Telegraf(LoadEnv.BOT_TOKEN);
 
     const News: News[] | undefined = await FetchTodaysNewsList();
@@ -47,5 +47,3 @@ const Main = async (): Promise<void> => {
         }
     }
 };
-
-await Main();
