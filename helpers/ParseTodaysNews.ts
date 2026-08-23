@@ -1,6 +1,5 @@
 import type { News } from "../types/NewsList.js"
 import { JSDOM } from "jsdom";
-import AsyncMap from "./AsyncMap.js";
 
 const Tags: Set<string> = new Set([
     "a",
@@ -71,11 +70,10 @@ const Block: Set<string> = new Set([
 
 const Void: Set<string> = new Set(["hr", "br"]);
 
-const ToTelegramRichHTML = async (HTML: string, Media: TelegramRichMedia[], FormData: FormData[]): Promise<string> => 
-    (await AsyncMap(
-        [...new JSDOM(`<body>${HTML}</body>`).window.document.childNodes],
-        async Node => await SerializeNode(Node, Media, FormData)
-    )).join("").trim()
+const ToTelegramRichHTML = (HTML: string, Media: TelegramRichMedia[], FormData: FormData[]): string => 
+    [...new JSDOM(`<body>${HTML}</body>`).window.document.childNodes]
+        .map(Node => SerializeNode(Node, Media, FormData))
+        .join("").trim()
 ;
 
 const IsBlockNode = (node: Node): boolean => 
@@ -90,7 +88,7 @@ const IsElement = (Node: unknown): Node is Element =>
     (Node as Node).nodeType === 1
 ;
 
-const SerializeContainer = async (Parent: ParentNode, Media: TelegramRichMedia[], FormData: FormData[]): Promise<string> => {
+const SerializeContainer = (Parent: ParentNode, Media: TelegramRichMedia[], FormData: FormData[]): string => {
     const Parts: string[] = [];
     let InlineBuffer: string[] = [];
 
@@ -104,7 +102,7 @@ const SerializeContainer = async (Parent: ParentNode, Media: TelegramRichMedia[]
     };
 
     for(const Node of Array.from(Parent.childNodes)) {
-        const Serialized: string = await SerializeNode(Node, Media, FormData);
+        const Serialized: string = SerializeNode(Node, Media, FormData);
         
         if(!Serialized) 
             continue;
@@ -121,7 +119,7 @@ const SerializeContainer = async (Parent: ParentNode, Media: TelegramRichMedia[]
     return Parts.join("");
 };
 
-const SerializeNode = async (Node: Node, Media: TelegramRichMedia[], FormData: FormData[]): Promise<string> => {
+const SerializeNode = (Node: Node, Media: TelegramRichMedia[], FormData: FormData[]): string => {
     if(Node.nodeType === 3) 
         return EscapeText(Node.textContent ?? "");
 
@@ -141,7 +139,7 @@ const SerializeNode = async (Node: Node, Media: TelegramRichMedia[], FormData: F
         return SerializeContainer(Element, Media, FormData);
 
     if(Block.has(Tag)) {
-        const Children: string = await SerializeContainer(Element, Media, FormData);
+        const Children: string = SerializeContainer(Element, Media, FormData);
 
         return Tag === "hr"
             ? "<hr>"
@@ -149,15 +147,12 @@ const SerializeNode = async (Node: Node, Media: TelegramRichMedia[], FormData: F
         ;
     }
 
-    const Children: string = await AsyncMap(
-        [...Element.childNodes],
-        async N => await SerializeNode(N, Media, FormData)
-    ).then(P => P.join(""));
+    const Children: string = [...Element.childNodes].map(N => SerializeNode(N, Media, FormData)).join("");
 
     if(!Tags.has(Tag)) 
         return Children;
 
-    const Attributes: string = await SerializeAttributes(Element, Media, FormData);
+    const Attributes: string = SerializeAttributes(Element, Media, FormData);
 
     return Void.has(Tag)
         ? `<${Tag}${Attributes}>`
@@ -165,7 +160,7 @@ const SerializeNode = async (Node: Node, Media: TelegramRichMedia[], FormData: F
     ;
 };
 
-const SerializeAttributes = async (Element: Element, Media: TelegramRichMedia[], FormData: FormData[]): Promise<string> => {
+const SerializeAttributes = (Element: Element, Media: TelegramRichMedia[], FormData: FormData[]): string => {
     const TagName: string = Element.tagName.toLowerCase();
 
     switch(TagName) {
@@ -189,7 +184,7 @@ const SerializeAnchorAttributes = (Element: Element): string => {
     ;
 };
 
-const SerializeImage = async (Element: Element, Media: TelegramRichMedia[], FormData: FormData[]): Promise<string> => {
+const SerializeImage = (Element: Element, Media: TelegramRichMedia[], FormData: FormData[]): string => {
     const src: string | null = Element.getAttribute("src");
 
     if(!src) 
@@ -252,21 +247,18 @@ export interface FormData {
     FileName: string;
 }
 
-export default async (News: News[]): Promise<ParsedNewsPage[]> => await AsyncMap(
-    News,
-    async (N: News): Promise<ParsedNewsPage> => {
-        const DOM: JSDOM = new JSDOM(`<body>${N.content}</body>`);        
-        const document: Document = DOM.window.document;
-        const Media: TelegramRichMedia[] = [];
-        const FormData: FormData[] = [];
+export default (News: News[]): ParsedNewsPage[] => News.map(N => {
+    const DOM: JSDOM = new JSDOM(`<body>${N.content}</body>`);        
+    const document: Document = DOM.window.document;
+    const Media: TelegramRichMedia[] = [];
+    const FormData: FormData[] = [];
 
-        return {
-            Timestamp: N.publishTime,
-            Link: N.link,
-            ID: N.id,
-            Media,
-            FormData,
-            Content: await ToTelegramRichHTML(document.body.innerHTML, Media, FormData)
-        };
-    }
-);
+    return {
+        Timestamp: N.publishTime,
+        Link: N.link,
+        ID: N.id,
+        Media,
+        FormData,
+        Content: ToTelegramRichHTML(document.body.innerHTML, Media, FormData)
+    };
+});
