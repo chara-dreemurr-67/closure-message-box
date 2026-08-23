@@ -37,7 +37,9 @@ export default async function main(Index?: number, PageSize?: number): Promise<v
                 ,
                 media: News.Media
             }));
-            News.FormData.forEach(F => Form.append(F.ID, F.Blob, F.FileName));
+
+            for(const F of News.FormData) 
+                Form.append(F.ID, await (await fetch(F.Link)).blob(), F.FileName);
 
             await fetch(
                 `https://api.telegram.org/bot${LoadEnv.BOT_TOKEN}/sendRichMessage`,

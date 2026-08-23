@@ -196,7 +196,6 @@ const SerializeImage = async (Element: Element, Media: TelegramRichMedia[], Form
         return "";
 
     const id: string = `media_${Media.length}`;
-    const Response: Response = await fetch(src);
 
     Media.push({
         id,
@@ -208,7 +207,7 @@ const SerializeImage = async (Element: Element, Media: TelegramRichMedia[], Form
 
     FormData.push({
         ID: id,
-        Blob: await Response.blob(),
+        Link: src,
         FileName: `${id}.png`
     });
 
@@ -249,7 +248,7 @@ export interface TelegramRichMedia {
 
 export interface FormData {
     ID: string;
-    Blob: Blob;
+    Link: string;
     FileName: string;
 }
 
