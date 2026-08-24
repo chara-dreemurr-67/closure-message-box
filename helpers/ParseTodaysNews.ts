@@ -68,13 +68,20 @@ const Block: Set<string> = new Set([
     "hr"
 ]);
 
-const Void: Set<string> = new Set(["hr", "br"]);
-
-const ToTelegramRichHTML = (HTML: string, Media: TelegramRichMedia[], FormData: FormData[]): string => 
-    [...new JSDOM(`<body>${HTML}</body>`).window.document.childNodes]
-        .map(Node => SerializeNode(Node, Media, FormData))
-        .join("").trim()
-;
+enum NodeTypes {
+    ELEMENT_NODE = 1,
+    ATTRIBUTE_NODE = 2,
+    TEXT_NODE = 3,
+    CDATA_SECTION_NODE = 4,
+    ENTITY_REFERENCE_NODE = 5,
+    ENTITY_NODE = 6,
+    PROCESSING_INSTRUCTION_NODE = 7,
+    COMMENT_NODE = 8,
+    DOCUMENT_NODE = 9,
+    DOCUMENT_TYPE_NODE = 10,
+    DOCUMENT_FRAGMENT_NODE = 11,
+    NOTATION_NODE = 12
+}
 
 const IsBlockNode = (node: Node): boolean => 
     node.nodeType === 1 &&
@@ -88,107 +95,11 @@ const IsElement = (Node: unknown): Node is Element =>
     (Node as Node).nodeType === 1
 ;
 
-const SerializeContainer = (Parent: ParentNode, Media: TelegramRichMedia[], FormData: FormData[]): string => {
-    const Parts: string[] = [];
-    let InlineBuffer: string[] = [];
-
-    const FlushInlineBuffer = () => {
-        const Content: string = InlineBuffer.join("").trim();
-
-        if(Content) 
-            Parts.push(`<p>${Content}</p>`);
-
-        InlineBuffer = [];
-    };
-
-    for(const Node of Array.from(Parent.childNodes)) {
-        const Serialized: string = SerializeNode(Node, Media, FormData);
-        
-        if(!Serialized) 
-            continue;
-        
-        if(IsBlockNode(Node)) {
-            FlushInlineBuffer();
-            Parts.push(Serialized);
-        }
-        else InlineBuffer.push(Serialized);
-    }
-
-    FlushInlineBuffer();
-
-    return Parts.join("");
-};
-
-const SerializeNode = (Node: Node, Media: TelegramRichMedia[], FormData: FormData[]): string => {
-    if(Node.nodeType === 3) 
-        return EscapeText(Node.textContent ?? "");
-
-    if(Node.nodeType === 8) 
-        return "";
-
-    if(!IsElement(Node)) 
-        return "";
-
-    const Element: Element = Node as Element;
-    const Tag: string = Element.tagName.toLowerCase();
-
-    if(Tag === "img") 
-        return SerializeImage(Element, Media, FormData);
-
-    if(!Tags.has(Tag))
-        return SerializeContainer(Element, Media, FormData);
-
-    if(Block.has(Tag)) {
-        const Children: string = SerializeContainer(Element, Media, FormData);
-
-        return Tag === "hr"
-            ? "<hr>"
-            : `<${Tag}>${Children}</${Tag}>`
-        ;
-    }
-
-    const Children: string = [...Element.childNodes].map(N => SerializeNode(N, Media, FormData)).join("");
-
-    if(!Tags.has(Tag)) 
-        return Children;
-
-    const Attributes: string = SerializeAttributes(Element, Media, FormData);
-
-    return Void.has(Tag)
-        ? `<${Tag}${Attributes}>`
-        : `<${Tag}${Attributes}>${Children}</${Tag}>`
-    ;
-};
-
-const SerializeAttributes = (Element: Element, Media: TelegramRichMedia[], FormData: FormData[]): string => {
-    const TagName: string = Element.tagName.toLowerCase();
-
-    switch(TagName) {
-        case "a":
-            return SerializeAnchorAttributes(Element);
-
-        case "img":
-            return SerializeImage(Element, Media, FormData);
-
-        default:
-            return "";
-    }
-};
-
-const SerializeAnchorAttributes = (Element: Element): string => {
-    const href: string | null = Element.getAttribute("href");
-
-    return !href 
-        ? ""
-        : ` href="${EscapeAttribute(href)}"`
-    ;
-};
-
-const SerializeImage = (Element: Element, Media: TelegramRichMedia[], FormData: FormData[]): string => {
+const ModifyImage = (Element: Element, document: Document, Media: TelegramRichMedia[], FormData: FormData[]): HTMLImageElement | undefined => {
     const src: string | null = Element.getAttribute("src");
 
     if(!src) 
-        return "";
+        return;
 
     const id: string = `media_${Media.length}`;
 
@@ -206,23 +117,129 @@ const SerializeImage = (Element: Element, Media: TelegramRichMedia[], FormData: 
         FileName: `${id}.png`
     });
 
-    return `<img src="tg://photo?id=${id}">`;
+    const Img: HTMLImageElement = document.createElement("img");
+    Img.src = `tg://photo?id=${id}`;
+
+    return Img;
 };
 
-const EscapeText = (Value: string): string => 
-    Value
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-;
+const ModifyContainer = (Node: Element, document: Document, Media: TelegramRichMedia[], FormData: FormData[]): DocumentFragment => {
+    const Fragment: DocumentFragment = document.createDocumentFragment();
+    const InlineBuffer: Node[] = [];
 
-const EscapeAttribute = (Value: string): string => 
-    Value
-        .replace(/&/g, "&amp;")
-        .replace(/"/g, "&quot;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-;
+    const FlushInlineBuffer = (): void => {
+        if(!InlineBuffer.length)
+            return;
+        Fragment.append(...InlineBuffer.map(N => {
+            const P: HTMLParagraphElement = document.createElement("p");
+            P.appendChild(N);
+            return P;
+        }));
+        InlineBuffer.length = 0;
+    };
+
+    for(const Child of [...Node.childNodes]) {
+        const Modified: DocumentFragment | undefined = ModifyNode(Child, document, Media, FormData);
+        
+        if(!Modified) 
+            continue;
+        
+        if(IsBlockNode(Child)) {
+            FlushInlineBuffer();
+            Fragment.append(Modified);
+        }
+        else InlineBuffer.push(Modified);
+    }
+
+    FlushInlineBuffer();
+    return Fragment;
+};
+
+const ModifyNode = (Node: Node, document: Document, Media: TelegramRichMedia[], FormData: FormData[]): DocumentFragment | undefined => {
+    const Fragment: DocumentFragment = document.createDocumentFragment();
+    if(Node.nodeType === Node.TEXT_NODE) {
+        if(!Node.textContent)
+            return;
+
+        Fragment.appendChild(document.createTextNode(Node.textContent));
+        return Fragment;
+    }
+
+    if(Node.nodeType === NodeTypes.COMMENT_NODE)
+        return;
+
+    if(!IsElement(Node))
+        return;
+
+    const TagName: string = Node.tagName.toLowerCase();
+
+    if(TagName === "img") {
+        const Img: HTMLImageElement | undefined = ModifyImage(Node, document, Media, FormData);
+
+        if(!Img)
+            return;
+
+        Fragment.appendChild(Img);
+        return Fragment;
+    }
+
+    if(TagName === "a") {
+        const href: string | null = Node.getAttribute("href");
+
+        if(!href)
+            return;
+
+        const a: HTMLAnchorElement = document.createElement("a");
+
+        Fragment.appendChild(a);
+
+        return Fragment;
+    }
+
+    if(!Tags.has(TagName)) {
+        const Modified: DocumentFragment = ModifyContainer(Node, document, Media, FormData);
+        if(!Modified.childNodes.length)
+            return;
+        return Modified;
+    }
+
+    if(Block.has(TagName)) {
+        if(TagName === "hr") {
+            Fragment.appendChild(document.createElement("hr"));
+            return Fragment;
+        }
+
+        const Children: DocumentFragment = ModifyContainer(Node, document, Media, FormData);
+
+        if(!Children.childNodes.length)
+            return;
+        return Children;
+    }
+
+    [...Node.childNodes]
+        .map(N => ModifyNode(N, document, Media, FormData))
+        .filter(F => !!F)
+        .forEach(F => Fragment.appendChild(F))
+    ;
+    return Fragment;
+};
+
+const ToTelegramRichHTML = (HTML: string, Media: TelegramRichMedia[], FormData: FormData[]): HTMLBodyElement => {
+    const DOM: JSDOM = new JSDOM(`<body></body>`);
+    const document: Document = DOM.window.document;
+
+    document.body.innerHTML = new JSDOM(HTML).window.document.body.innerHTML.replaceAll("\n", "");
+
+    const Root: HTMLBodyElement = document.createElement("body");
+
+    [...document.body.childNodes]
+        .map(N => ModifyNode(N, document, Media, FormData))
+        .filter(F => !!F)
+        .forEach(F => Root.appendChild(F))
+    ;
+
+    return Root;
+};
 
 export interface ParsedNewsPage {
     Timestamp: number;
@@ -259,6 +276,6 @@ export default (News: News[]): ParsedNewsPage[] => News.map(N => {
         ID: N.id,
         Media,
         FormData,
-        Content: ToTelegramRichHTML(document.body.innerHTML, Media, FormData)
+        Content: ToTelegramRichHTML(document.body.innerHTML, Media, FormData).innerHTML.replaceAll("\n", "")
     };
 });
