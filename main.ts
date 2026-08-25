@@ -24,7 +24,7 @@ export default async function main(Index?: number, PageSize?: number): Promise<v
     
     await Client.telegram.sendMessage(LoadEnv.CHATID, `Fetched ${News.length} articles.`);
 
-    const Parsed: ParsedNewsPage[] = ParseTodaysNews(News);
+    const Parsed: ParsedNewsPage[] = await ParseTodaysNews(News);
 
     for(const News of Parsed) {
         try {
