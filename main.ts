@@ -48,8 +48,6 @@ export default async function main(Index?: number, PageSize?: number): Promise<v
                     body: Form
                 }
             );
-
-            await Client.telegram.sendMessage(LoadEnv.CHATID, new Array(3).fill("=".repeat(50)).join("\n"));
         }
         catch(Err) {
             await Client.telegram.sendMessage(LoadEnv.CHATID, Err as any);
